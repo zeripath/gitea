@@ -467,7 +467,7 @@ func SearchPublicKeyByContent(content string) (*PublicKey, error) {
 }
 
 // SearchPublicKey returns a list of public keys matching the provided arguments.
-func SearchPublicKey(uid int64, fingerprint string) ([]*PublicKey, error) {
+func SearchPublicKey(uid int64, fingerprint string, keyType string, keyContent string) ([]*PublicKey, error) {
 	keys := make([]*PublicKey, 0, 5)
 	cond := builder.NewCond()
 	if uid != 0 {
@@ -475,6 +475,17 @@ func SearchPublicKey(uid int64, fingerprint string) ([]*PublicKey, error) {
 	}
 	if fingerprint != "" {
 		cond = cond.And(builder.Eq{"fingerprint": fingerprint})
+	}
+	if keyContent != "" {
+		replacer := strings.NewReplacer("\\", "\\\\", "%", "\\%", "_", "\\_", "[", "\\[")
+		likeString := replacer.Replace(keyContent)
+		likeSQL := "content LIKE ? ESCAPE ?"
+		if keyType != "" {
+			likeString = replacer.Replace(keyType) + " " + likeString
+			cond = cond.And(builder.Eq{"content": keyType + " " + keyContent}.Or(builder.Expr(likeSQL, likeString+" %", "\\")))
+		} else {
+			cond = cond.And(builder.Expr(likeSQL, "% "+likeString, "\\").Or(builder.Expr(likeSQL, "% "+likeString+" %", "\\")))
+		}
 	}
 	return keys, x.Where(cond).Find(&keys)
 }

@@ -66,15 +66,17 @@ func listPublicKeys(ctx *context.APIContext, user *models.User) {
 
 	fingerprint := ctx.Query("fingerprint")
 	username := ctx.Params("username")
+	keyType := ctx.Query("type")
+	keyContent := ctx.Query("content")
 
-	if fingerprint != "" {
+	if fingerprint != "" || keyContent != "" {
 		// Querying not just listing
 		if username != "" {
 			// Restrict to provided uid
-			keys, err = models.SearchPublicKey(user.ID, fingerprint)
+			keys, err = models.SearchPublicKey(user.ID, fingerprint, keyType, keyContent)
 		} else {
 			// Unrestricted
-			keys, err = models.SearchPublicKey(0, fingerprint)
+			keys, err = models.SearchPublicKey(0, fingerprint, keyType, keyContent)
 		}
 	} else {
 		// Use ListPublicKeys
@@ -108,6 +110,14 @@ func ListMyPublicKeys(ctx *context.APIContext) {
 	//   in: query
 	//   description: fingerprint of the key
 	//   type: string
+	// - name: content
+	//   in: query
+	//   description: base64-encoded key
+	//   type: string
+	// - name: type
+	//   in: query
+	//   description: type of the key
+	//   type: string
 	// produces:
 	// - application/json
 	// responses:
@@ -132,6 +142,14 @@ func ListPublicKeys(ctx *context.APIContext) {
 	// - name: fingerprint
 	//   in: query
 	//   description: fingerprint of the key
+	//   type: string
+	// - name: content
+	//   in: query
+	//   description: base64-encoded key
+	//   type: string
+	// - name: type
+	//   in: query
+	//   description: type of the key
 	//   type: string
 	// responses:
 	//   "200":

@@ -139,4 +139,46 @@ func TestCreateUserKey(t *testing.T) {
 
 	DecodeJSON(t, resp, &fingerprintPublicKeys)
 	assert.Len(t, fingerprintPublicKeys, 0)
+
+	// Search by content
+	contentURL := fmt.Sprintf("/api/v1/user/keys?token=%s&content=%s", token, url.QueryEscape(keyContent))
+
+	req = NewRequest(t, "GET", contentURL)
+	resp = session.MakeRequest(t, req, http.StatusOK)
+
+	var contentPublicKeys []api.PublicKey
+	DecodeJSON(t, resp, &contentPublicKeys)
+	assert.Equal(t, newPublicKey.Fingerprint, contentPublicKeys[0].Fingerprint)
+	assert.Equal(t, newPublicKey.ID, contentPublicKeys[0].ID)
+	assert.Equal(t, newPublicKey.Key, contentPublicKeys[0].Key)
+
+	// Fail search by content
+	contentURL = fmt.Sprintf("/api/v1/user/keys?token=%s&content=%sA", token, url.QueryEscape(keyContent))
+
+	req = NewRequest(t, "GET", contentURL)
+	resp = session.MakeRequest(t, req, http.StatusOK)
+
+	DecodeJSON(t, resp, &contentPublicKeys)
+	assert.Len(t, contentPublicKeys, 0)
+
+	// Search by content and type
+	contentAndTypeURL := fmt.Sprintf("/api/v1/user/keys?token=%s&content=%s&type=%s", token, url.QueryEscape(keyContent), keyType)
+
+	req = NewRequest(t, "GET", contentAndTypeURL)
+	resp = session.MakeRequest(t, req, http.StatusOK)
+
+	var contentAndTypePublicKeys []api.PublicKey
+	DecodeJSON(t, resp, &contentAndTypePublicKeys)
+	assert.Equal(t, newPublicKey.Fingerprint, contentAndTypePublicKeys[0].Fingerprint)
+	assert.Equal(t, newPublicKey.ID, contentAndTypePublicKeys[0].ID)
+	assert.Equal(t, newPublicKey.Key, contentAndTypePublicKeys[0].Key)
+
+	// Fail search by content and type
+	contentAndTypeURL = fmt.Sprintf("/api/v1/user/keys?token=%s&content=%s&type=%sA", token, url.QueryEscape(keyContent), keyType)
+
+	req = NewRequest(t, "GET", contentAndTypeURL)
+	resp = session.MakeRequest(t, req, http.StatusOK)
+
+	DecodeJSON(t, resp, &contentAndTypePublicKeys)
+	assert.Len(t, contentAndTypePublicKeys, 0)
 }
