@@ -25,7 +25,8 @@ import (
 	"code.gitea.io/gitea/modules/web"
 	"code.gitea.io/gitea/routers/utils"
 	"code.gitea.io/gitea/services/forms"
-	jsoniter "github.com/json-iterator/go"
+
+	"github.com/goccy/go-json"
 )
 
 const (
@@ -159,7 +160,6 @@ func GetEditorConfig(ctx *context.Context, treePath string) string {
 	if err == nil {
 		def, err := ec.GetDefinitionForFilename(treePath)
 		if err == nil {
-			json := jsoniter.ConfigCompatibleWithStandardLibrary
 			jsonStr, _ := json.Marshal(def)
 			return string(jsonStr)
 		}

@@ -98,8 +98,7 @@ func TestConnLoggerBadConfig(t *testing.T) {
 	logger := NewConn()
 
 	err := logger.Init("{")
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "Unable to parse JSON")
+	assert.Equal(t, "unexpected end of JSON input", err.Error())
 	logger.Close()
 }
 

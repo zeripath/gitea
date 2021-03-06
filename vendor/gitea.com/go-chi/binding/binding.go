@@ -29,7 +29,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	jsoniter "github.com/json-iterator/go"
+	"github.com/goccy/go-json"
 	"github.com/unknwon/com"
 )
 
@@ -89,7 +89,6 @@ func errorHandler(errs Errors, rw http.ResponseWriter) {
 		} else {
 			rw.WriteHeader(STATUS_UNPROCESSABLE_ENTITY)
 		}
-		json := jsoniter.ConfigCompatibleWithStandardLibrary
 		errOutput, _ := json.Marshal(errs)
 		rw.Write(errOutput)
 		return
@@ -172,7 +171,6 @@ func JSON(req *http.Request, jsonStruct interface{}) Errors {
 
 	if req.Body != nil {
 		defer req.Body.Close()
-		json := jsoniter.ConfigCompatibleWithStandardLibrary
 		err := json.NewDecoder(req.Body).Decode(jsonStruct)
 		if err != nil && err != io.EOF {
 			errors.Add([]string{}, ERR_DESERIALIZATION, err.Error())

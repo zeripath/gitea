@@ -15,7 +15,8 @@ import (
 	repo_module "code.gitea.io/gitea/modules/repository"
 	"code.gitea.io/gitea/modules/structs"
 	"code.gitea.io/gitea/modules/timeutil"
-	jsoniter "github.com/json-iterator/go"
+
+	"github.com/goccy/go-json"
 )
 
 // taskQueue is a global queue of tasks
@@ -65,7 +66,6 @@ func MigrateRepository(doer, u *models.User, opts base.MigrateOptions) error {
 
 // CreateMigrateTask creates a migrate task
 func CreateMigrateTask(doer, u *models.User, opts base.MigrateOptions) (*models.Task, error) {
-	json := jsoniter.ConfigCompatibleWithStandardLibrary
 	bs, err := json.Marshal(&opts)
 	if err != nil {
 		return nil, err
