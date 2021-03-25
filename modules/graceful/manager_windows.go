@@ -88,22 +88,29 @@ func (g *Manager) start() {
 
 // Execute makes Manager implement svc.Handler
 func (g *Manager) Execute(args []string, changes <-chan svc.ChangeRequest, status chan<- svc.Status) (svcSpecificEC bool, exitCode uint32) {
+	log.Info("Starting SVC handler")
 	if setting.StartupTimeout > 0 {
 		status <- svc.Status{State: svc.StartPending}
 	} else {
 		status <- svc.Status{State: svc.StartPending, WaitHint: uint32(setting.StartupTimeout / time.Millisecond)}
 	}
+	log.Info("Sent pending status - now awaiting server startup")
 
 	// Now need to wait for everything to start...
 	if !g.awaitServer(setting.StartupTimeout) {
+		log.Info("await server returned false")
 		return false, 1
 	}
+
+	log.Info("sending running status")
 
 	// We need to implement some way of svc.AcceptParamChange/svc.ParamChange
 	status <- svc.Status{
 		State:   svc.Running,
 		Accepts: svc.AcceptStop | svc.AcceptShutdown | acceptHammerCode,
 	}
+
+	log.Info("sent running status")
 
 	waitTime := 30 * time.Second
 
@@ -187,7 +194,9 @@ func (g *Manager) awaitServer(limit time.Duration) bool {
 	c := make(chan struct{})
 	go func() {
 		defer close(c)
+		log.Info("awaitServer goroutine awaiting createServerWaitGroup to finish")
 		g.createServerWaitGroup.Wait()
+		log.Info("createServerWaitGroup done")
 	}()
 	if limit > 0 {
 		select {

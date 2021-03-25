@@ -309,6 +309,7 @@ func (g *Manager) setState(st state) {
 // InformCleanup tells the cleanup wait group that we have either taken a listener
 // or will not be taking a listener
 func (g *Manager) InformCleanup() {
+	log.Info("InformCleanup Called: %s", log.Stack(1))
 	g.createServerWaitGroup.Done()
 }
 
