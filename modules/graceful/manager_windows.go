@@ -58,6 +58,7 @@ func newGracefulManager(ctx context.Context) *Manager {
 }
 
 func (g *Manager) start() {
+	log.Error("Graceful Manager starting up")
 	// Make channels
 	g.terminate = make(chan struct{})
 	g.shutdown = make(chan struct{})
@@ -67,7 +68,10 @@ func (g *Manager) start() {
 
 	// Set the running state
 	g.setState(stateRunning)
+	log.Error("Checking SKIP_MINWINSVC")
+
 	if skip, _ := strconv.ParseBool(os.Getenv("SKIP_MINWINSVC")); skip {
+		log.Error("SKIP_MINWINSVC set so skipping: %s", os.Getenv("SKIP_MINWINSVC"))
 		return
 	}
 
