@@ -77,12 +77,12 @@ func (g *Manager) start() {
 
 	// Make SVC process
 	run := svc.Run
-	isInteractive, err := svc.IsWindowsService()
+	isWindowsService, err := svc.IsWindowsService()
 	if err != nil {
 		log.Error("Unable to ascertain if running as an Interactive Session: %v", err)
 		return
 	}
-	if isInteractive {
+	if !isWindowsService {
 		run = debug.Run
 	}
 	go func() {
