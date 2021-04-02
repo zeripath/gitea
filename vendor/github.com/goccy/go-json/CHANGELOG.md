@@ -1,3 +1,14 @@
+# v0.4.11 - 2021/4/3
+
+* Improve decoder performance for interface type
+
+# v0.4.10 - 2021/4/2
+
+### Fix encoder
+
+* Fixed a bug when encoding slice and map containing recursive structures
+* Fixed a logic to determine if indirect reference
+
 # v0.4.9 - 2021/3/29
 
 ### Add debug mode

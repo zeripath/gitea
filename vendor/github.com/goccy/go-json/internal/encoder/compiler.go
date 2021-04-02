@@ -107,12 +107,24 @@ func compileHead(ctx *compileContext) (*Opcode, error) {
 				return compileBytes(ctx)
 			}
 		}
-		return compileSlice(ctx)
+		code, err := compileSlice(ctx)
+		if err != nil {
+			return nil, err
+		}
+		optimizeStructEnd(code)
+		linkRecursiveCode(code)
+		return code, nil
 	case reflect.Map:
 		if isPtr {
 			return compilePtr(ctx.withType(runtime.PtrTo(typ)))
 		}
-		return compileMap(ctx.withType(typ))
+		code, err := compileMap(ctx.withType(typ))
+		if err != nil {
+			return nil, err
+		}
+		optimizeStructEnd(code)
+		linkRecursiveCode(code)
+		return code, nil
 	case reflect.Struct:
 		code, err := compileStruct(ctx.withType(typ), isPtr)
 		if err != nil {
@@ -243,10 +255,11 @@ func linkRecursiveCode(c *Opcode) {
 
 			lastCode.Idx = beforeLastCode.Idx + uintptrSize
 			lastCode.ElemIdx = lastCode.Idx + uintptrSize
+			lastCode.Length = lastCode.Idx + 2*uintptrSize
 
-			// extend length to alloc slot for elemIdx
-			totalLength := uintptr(code.TotalLength() + 1)
-			nextTotalLength := uintptr(c.TotalLength() + 1)
+			// extend length to alloc slot for elemIdx + length
+			totalLength := uintptr(code.TotalLength() + 2)
+			nextTotalLength := uintptr(c.TotalLength() + 2)
 
 			c.End.Next.Op = OpRecursiveEnd
 
@@ -1399,7 +1412,15 @@ func compileStruct(ctx *compileContext, isPtr bool) (*Opcode, error) {
 				valueCode.Indirect = indirect
 			}
 		} else {
-			valueCode.Indirect = indirect
+			if indirect {
+				// if parent is indirect type, set child indirect property to true
+				valueCode.Indirect = indirect
+			} else {
+				// if parent is not indirect type and child have only one field, set child indirect property to false
+				if i == 0 && valueCode.NextField != nil && valueCode.NextField.Op == OpStructEnd {
+					valueCode.Indirect = indirect
+				}
+			}
 		}
 		key := fmt.Sprintf(`"%s":`, tag.Key)
 		escapedKey := fmt.Sprintf(`%s:`, string(AppendEscapedString([]byte{}, tag.Key)))
