@@ -1,3 +1,23 @@
+# v0.4.13 - 2021/4/20
+
+### Fix json.Compact and json.Indent
+
+* Support validation the input buffer for json.Compact and json.Indent ( #189 )
+* Optimize json.Compact and json.Indent ( improve memory footprint ) ( #190 )
+
+# v0.4.12 - 2021/4/15
+
+### Fix encoder
+
+* Fix unnecessary indent for empty slice type ( #181 )
+* Fix encoding of omitempty feature for the slice or interface type ( #183 )
+* Fix encoding custom types zero values with omitempty when marshaller exists ( #187 )
+
+### Fix decoder
+
+* Fix decoder for invalid top level value ( #184 )
+* Fix decoder for invalid number value ( #185 )
+
 # v0.4.11 - 2021/4/3
 
 * Improve decoder performance for interface type

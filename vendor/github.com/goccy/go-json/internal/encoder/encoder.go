@@ -304,31 +304,6 @@ func MapIterNext(it unsafe.Pointer)
 //go:noescape
 func MapLen(m unsafe.Pointer) int
 
-type RuntimeContext struct {
-	Buf        []byte
-	Ptrs       []uintptr
-	KeepRefs   []unsafe.Pointer
-	SeenPtr    []uintptr
-	BaseIndent int
-	Prefix     []byte
-	IndentStr  []byte
-}
-
-func (c *RuntimeContext) Init(p uintptr, codelen int) {
-	if len(c.Ptrs) < codelen {
-		c.Ptrs = make([]uintptr, codelen)
-	}
-	c.Ptrs[0] = p
-	c.KeepRefs = c.KeepRefs[:0]
-	c.SeenPtr = c.SeenPtr[:0]
-	c.BaseIndent = 0
-}
-
-func (c *RuntimeContext) Ptr() uintptr {
-	header := (*runtime.SliceHeader)(unsafe.Pointer(&c.Ptrs))
-	return uintptr(header.Data)
-}
-
 func AppendByteSlice(b []byte, src []byte) []byte {
 	if src == nil {
 		return append(b, `null`...)
@@ -413,7 +388,7 @@ func AppendNumber(b []byte, n json.Number) ([]byte, error) {
 	return b, nil
 }
 
-func AppendMarshalJSON(code *Opcode, b []byte, v interface{}, escape bool) ([]byte, error) {
+func AppendMarshalJSON(ctx *RuntimeContext, code *Opcode, b []byte, v interface{}, escape bool) ([]byte, error) {
 	rv := reflect.ValueOf(v) // convert by dynamic interface type
 	if code.AddrForMarshaler {
 		if rv.CanAddr() {
@@ -433,12 +408,14 @@ func AppendMarshalJSON(code *Opcode, b []byte, v interface{}, escape bool) ([]by
 	if err != nil {
 		return nil, &errors.MarshalerError{Type: reflect.TypeOf(v), Err: err}
 	}
-	buf := bytes.NewBuffer(b)
-	// TODO: we should validate buffer with `compact`
-	if err := Compact(buf, bb, escape); err != nil {
+	marshalBuf := ctx.MarshalBuf[:0]
+	marshalBuf = append(append(marshalBuf, bb...), nul)
+	compactedBuf, err := compact(b, marshalBuf, escape)
+	if err != nil {
 		return nil, &errors.MarshalerError{Type: reflect.TypeOf(v), Err: err}
 	}
-	return buf.Bytes(), nil
+	ctx.MarshalBuf = marshalBuf
+	return compactedBuf, nil
 }
 
 func AppendMarshalJSONIndent(ctx *RuntimeContext, code *Opcode, b []byte, v interface{}, indent int, escape bool) ([]byte, error) {
@@ -461,20 +438,20 @@ func AppendMarshalJSONIndent(ctx *RuntimeContext, code *Opcode, b []byte, v inte
 	if err != nil {
 		return nil, &errors.MarshalerError{Type: reflect.TypeOf(v), Err: err}
 	}
-	var compactBuf bytes.Buffer
-	if err := Compact(&compactBuf, bb, escape); err != nil {
-		return nil, &errors.MarshalerError{Type: reflect.TypeOf(v), Err: err}
-	}
-	var indentBuf bytes.Buffer
-	if err := Indent(
-		&indentBuf,
-		compactBuf.Bytes(),
+	marshalBuf := ctx.MarshalBuf[:0]
+	marshalBuf = append(append(marshalBuf, bb...), nul)
+	indentedBuf, err := doIndent(
+		b,
+		marshalBuf,
 		string(ctx.Prefix)+strings.Repeat(string(ctx.IndentStr), ctx.BaseIndent+indent),
 		string(ctx.IndentStr),
-	); err != nil {
+		escape,
+	)
+	if err != nil {
 		return nil, &errors.MarshalerError{Type: reflect.TypeOf(v), Err: err}
 	}
-	return append(b, indentBuf.Bytes()...), nil
+	ctx.MarshalBuf = marshalBuf
+	return indentedBuf, nil
 }
 
 func AppendMarshalText(code *Opcode, b []byte, v interface{}, escape bool) ([]byte, error) {
@@ -548,18 +525,33 @@ func AppendStructEnd(b []byte) []byte {
 func AppendStructEndIndent(ctx *RuntimeContext, b []byte, indent int) []byte {
 	b = append(b, '\n')
 	b = append(b, ctx.Prefix...)
-	b = append(b, bytes.Repeat(ctx.IndentStr, ctx.BaseIndent+indent)...)
+	indentNum := ctx.BaseIndent + indent
+	for i := 0; i < indentNum; i++ {
+		b = append(b, ctx.IndentStr...)
+	}
 	return append(b, '}', ',', '\n')
 }
 
 func AppendIndent(ctx *RuntimeContext, b []byte, indent int) []byte {
 	b = append(b, ctx.Prefix...)
-	return append(b, bytes.Repeat(ctx.IndentStr, ctx.BaseIndent+indent)...)
+	indentNum := ctx.BaseIndent + indent
+	for i := 0; i < indentNum; i++ {
+		b = append(b, ctx.IndentStr...)
+	}
+	return b
 }
 
 func IsNilForMarshaler(v interface{}) bool {
 	rv := reflect.ValueOf(v)
 	switch rv.Kind() {
+	case reflect.Bool:
+		return !rv.Bool()
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		return rv.Int() == 0
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
+		return rv.Uint() == 0
+	case reflect.Float32, reflect.Float64:
+		return math.Float64bits(rv.Float()) == 0
 	case reflect.Interface, reflect.Map, reflect.Ptr, reflect.Func:
 		return rv.IsNil()
 	case reflect.Slice:

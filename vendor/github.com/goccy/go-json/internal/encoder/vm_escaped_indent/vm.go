@@ -1,7 +1,6 @@
 package vm_escaped_indent
 
 import (
-	"bytes"
 	"fmt"
 	"math"
 	"sort"
@@ -29,6 +28,8 @@ var (
 	appendNumber        = encoder.AppendNumber
 	appendMarshalJSON   = encoder.AppendMarshalJSONIndent
 	appendMarshalText   = encoder.AppendMarshalTextIndent
+	appendStructEnd     = encoder.AppendStructEndIndent
+	appendIndent        = encoder.AppendIndent
 	errUnsupportedValue = encoder.ErrUnsupportedValue
 	errUnsupportedFloat = encoder.ErrUnsupportedFloat
 	mapiterinit         = encoder.MapIterInit
@@ -338,7 +339,6 @@ func Run(ctx *encoder.RuntimeContext, b []byte, codeSet *encoder.OpcodeSet, opt 
 				code = code.Next
 				store(ctxptr, code.Idx, uintptr(slice.Data))
 			} else {
-				b = appendIndent(ctx, b, code.Indent)
 				b = append(b, '[', ']', ',', '\n')
 				code = code.End.Next
 			}
@@ -385,7 +385,6 @@ func Run(ctx *encoder.RuntimeContext, b []byte, codeSet *encoder.OpcodeSet, opt 
 				code = code.Next
 				store(ctxptr, code.Idx, p)
 			} else {
-				b = appendIndent(ctx, b, code.Indent)
 				b = append(b, '[', ']', ',', '\n')
 				code = code.End.Next
 			}
@@ -520,8 +519,7 @@ func Run(ctx *encoder.RuntimeContext, b []byte, codeSet *encoder.OpcodeSet, opt 
 			sort.Sort(mapCtx.Slice)
 			buf := mapCtx.Buf
 			for _, item := range mapCtx.Slice.Items {
-				buf = append(buf, ctx.Prefix...)
-				buf = append(buf, bytes.Repeat(ctx.IndentStr, ctx.BaseIndent+code.Indent+1)...)
+				buf = appendIndent(ctx, buf, code.Indent+1)
 				buf = append(buf, item.Key...)
 				buf[len(buf)-2] = ':'
 				buf[len(buf)-1] = ' '
@@ -529,8 +527,7 @@ func Run(ctx *encoder.RuntimeContext, b []byte, codeSet *encoder.OpcodeSet, opt 
 			}
 			buf = buf[:len(buf)-2]
 			buf = append(buf, '\n')
-			buf = append(buf, ctx.Prefix...)
-			buf = append(buf, bytes.Repeat(ctx.IndentStr, ctx.BaseIndent+code.Indent)...)
+			buf = appendIndent(ctx, buf, code.Indent)
 			buf = append(buf, '}', ',', '\n')
 
 			b = b[:pos[0]]
@@ -2578,7 +2575,7 @@ func Run(ctx *encoder.RuntimeContext, b []byte, codeSet *encoder.OpcodeSet, opt 
 			}
 			p += code.Offset
 			slice := ptrToSlice(p)
-			if slice.Data == nil {
+			if slice.Len == 0 {
 				code = code.NextField
 			} else {
 				b = appendIndent(ctx, b, code.Indent+1)
@@ -3903,10 +3900,15 @@ func Run(ctx *encoder.RuntimeContext, b []byte, codeSet *encoder.OpcodeSet, opt 
 				code = code.NextField
 				break
 			}
+			iface := ptrToInterface(code, p)
+			if code.Nilcheck && encoder.IsNilForMarshaler(iface) {
+				code = code.NextField
+				break
+			}
 			b = appendIndent(ctx, b, code.Indent)
 			b = append(b, code.EscapedKey...)
 			b = append(b, ' ')
-			bb, err := appendMarshalJSON(ctx, code, b, ptrToInterface(code, p), code.Indent+1, true)
+			bb, err := appendMarshalJSON(ctx, code, b, iface, code.Indent+1, true)
 			if err != nil {
 				return nil, err
 			}
@@ -4061,7 +4063,7 @@ func Run(ctx *encoder.RuntimeContext, b []byte, codeSet *encoder.OpcodeSet, opt 
 			p := load(ctxptr, code.HeadIdx)
 			p += code.Offset
 			slice := ptrToSlice(p)
-			if slice.Data == nil {
+			if slice.Len == 0 {
 				code = code.NextField
 			} else {
 				b = appendIndent(ctx, b, code.Indent)
