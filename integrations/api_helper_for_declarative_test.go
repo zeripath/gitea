@@ -249,7 +249,6 @@ func doAPIGetPullRequest(ctx APITestContext, owner, repo string, index int64) fu
 		}
 		resp := ctx.Session.MakeRequest(t, req, expected)
 
-		json := jsoniter.ConfigCompatibleWithStandardLibrary
 		decoder := json.NewDecoder(resp.Body)
 		pr := api.PullRequest{}
 		err := decoder.Decode(&pr)
