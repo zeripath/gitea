@@ -83,7 +83,7 @@ func (p *WorkerPool) Push(data Data) {
 }
 
 func (p *WorkerPool) zeroBoost() {
-	ctx, cancel := context.WithCancel(p.baseCtx)
+	ctx, cancel := context.WithTimeout(p.baseCtx, p.boostTimeout)
 	mq := GetManager().GetManagedQueue(p.qid)
 	boost := p.boostWorkers
 	if (boost+p.numberOfWorkers) > p.maxNumberOfWorkers && p.maxNumberOfWorkers >= 0 {
@@ -94,26 +94,14 @@ func (p *WorkerPool) zeroBoost() {
 
 		start := time.Now()
 		pid := mq.RegisterWorkers(boost, start, true, start.Add(p.boostTimeout), cancel, false)
-		go func() {
-			select {
-			case <-ctx.Done():
-			case <-time.After(p.boostTimeout):
-			}
+		cancel = func() {
 			mq.RemoveWorkers(pid)
-			cancel()
-		}()
+		}
 	} else {
 		log.Warn("WorkerPool: %d has zero workers - adding %d temporary workers for %s", p.qid, p.boostWorkers, p.boostTimeout)
-		go func() {
-			select {
-			case <-ctx.Done():
-			case <-time.After(p.boostTimeout):
-			}
-			cancel()
-		}()
 	}
 	p.lock.Unlock()
-	p.addWorkers(ctx, boost)
+	p.addWorkers(ctx, cancel, boost)
 }
 
 func (p *WorkerPool) pushBoost(data Data) {
@@ -167,7 +155,7 @@ func (p *WorkerPool) pushBoost(data Data) {
 				p.lock.Unlock()
 			}()
 			p.lock.Unlock()
-			p.addWorkers(ctx, boost)
+			p.addWorkers(ctx, cancel, boost)
 			p.dataChan <- data
 		}
 	}
@@ -243,28 +231,25 @@ func (p *WorkerPool) commonRegisterWorkers(number int, timeout time.Duration, is
 	mq := GetManager().GetManagedQueue(p.qid)
 	if mq != nil {
 		pid := mq.RegisterWorkers(number, start, hasTimeout, end, cancel, isFlusher)
-		go func() {
-			<-ctx.Done()
-			mq.RemoveWorkers(pid)
-			cancel()
-		}()
 		log.Trace("WorkerPool: %d (for %s) adding %d workers with group id: %d", p.qid, mq.Name, number, pid)
-	} else {
-		log.Trace("WorkerPool: %d adding %d workers (no group id)", p.qid, number)
-
+		return ctx, func() {
+			mq.RemoveWorkers(pid)
+		}
 	}
+	log.Trace("WorkerPool: %d adding %d workers (no group id)", p.qid, number)
+
 	return ctx, cancel
 }
 
 // AddWorkers adds workers to the pool - this allows the number of workers to go above the limit
 func (p *WorkerPool) AddWorkers(number int, timeout time.Duration) context.CancelFunc {
 	ctx, cancel := p.commonRegisterWorkers(number, timeout, false)
-	p.addWorkers(ctx, number)
+	p.addWorkers(ctx, cancel, number)
 	return cancel
 }
 
 // addWorkers adds workers to the pool
-func (p *WorkerPool) addWorkers(ctx context.Context, number int) {
+func (p *WorkerPool) addWorkers(ctx context.Context, cancel context.CancelFunc, number int) {
 	for i := 0; i < number; i++ {
 		p.lock.Lock()
 		if p.cond == nil {
@@ -279,11 +264,13 @@ func (p *WorkerPool) addWorkers(ctx context.Context, number int) {
 			p.numberOfWorkers--
 			if p.numberOfWorkers == 0 {
 				p.cond.Broadcast()
+				cancel()
 			} else if p.numberOfWorkers < 0 {
 				// numberOfWorkers can't go negative but...
 				log.Warn("Number of Workers < 0 for QID %d - this shouldn't happen", p.qid)
 				p.numberOfWorkers = 0
 				p.cond.Broadcast()
+				cancel()
 			}
 			p.lock.Unlock()
 		}()
