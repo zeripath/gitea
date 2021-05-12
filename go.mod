@@ -38,7 +38,7 @@ require (
 	github.com/go-chi/chi v1.5.4
 	github.com/go-chi/cors v1.2.0
 	github.com/go-enry/go-enry/v2 v2.6.1
-	github.com/go-git/go-billy/v5 v5.1.0
+	github.com/go-git/go-billy/v5 v5.3.1
 	github.com/go-git/go-git/v5 v5.3.0
 	github.com/go-ldap/ldap/v3 v3.3.0
 	github.com/go-redis/redis/v8 v8.8.2
@@ -120,7 +120,7 @@ require (
 	golang.org/x/crypto v0.0.0-20210421170649-83a5a9bb288b
 	golang.org/x/net v0.0.0-20210421230115-4e50805a0758
 	golang.org/x/oauth2 v0.0.0-20210413134643-5e61552d6c78
-	golang.org/x/sys v0.0.0-20210421221651-33663a62ff08
+	golang.org/x/sys v0.0.0-20210502180810-71e4cd670f79
 	golang.org/x/text v0.3.6
 	golang.org/x/time v0.0.0-20210220033141-f8bda1e9f3ba // indirect
 	golang.org/x/tools v0.1.0
@@ -135,3 +135,5 @@ require (
 )
 
 replace github.com/hashicorp/go-version => github.com/6543/go-version v1.3.1
+
+replace github.com/go-git/go-git/v5 => github.com/zeripath/go-git/v5 v5.3.1-0.20210512183418-932e3877406a
