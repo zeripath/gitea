@@ -392,12 +392,11 @@ github.com/gobwas/glob/syntax/ast
 github.com/gobwas/glob/syntax/lexer
 github.com/gobwas/glob/util/runes
 github.com/gobwas/glob/util/strings
-# github.com/goccy/go-json v0.5.0
+# github.com/goccy/go-json v0.5.1
 ## explicit
 github.com/goccy/go-json
 github.com/goccy/go-json/internal/encoder
 github.com/goccy/go-json/internal/encoder/vm
-github.com/goccy/go-json/internal/encoder/vm_debug
 github.com/goccy/go-json/internal/encoder/vm_escaped
 github.com/goccy/go-json/internal/encoder/vm_escaped_indent
 github.com/goccy/go-json/internal/encoder/vm_indent
