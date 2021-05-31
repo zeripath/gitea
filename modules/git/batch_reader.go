@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"io"
 	"math"
+	"os"
 	"strconv"
 	"strings"
 )
@@ -50,11 +51,17 @@ func CatFileBatchCheck(repoPath string) (WriteCloserError, *bufio.Reader, func()
 }
 
 // CatFileBatch opens git cat-file --batch in the provided repo and returns a stdin pipe, a stdout reader and cancel function
-func CatFileBatch(repoPath string) (WriteCloserError, *bufio.Reader, func()) {
+func CatFileBatch(repoPath string) (io.WriteCloser, *bufio.Reader, func()) {
 	// We often want to feed the commits in order into cat-file --batch, followed by their trees and sub trees as necessary.
 	// so let's create a batch stdin and stdout
-	batchStdinReader, batchStdinWriter := io.Pipe()
-	batchStdoutReader, batchStdoutWriter := io.Pipe()
+	batchStdinReader, batchStdinWriter, err := os.Pipe()
+	if err != nil {
+		return nil, nil, nil
+	}
+	batchStdoutReader, batchStdoutWriter, err := os.Pipe()
+	if err != nil {
+		return nil, nil, nil
+	}
 	cancel := func() {
 		_ = batchStdinReader.Close()
 		_ = batchStdinWriter.Close()
@@ -66,12 +73,14 @@ func CatFileBatch(repoPath string) (WriteCloserError, *bufio.Reader, func()) {
 		stderr := strings.Builder{}
 		err := NewCommand("cat-file", "--batch").RunInDirFullPipeline(repoPath, batchStdoutWriter, &stderr, batchStdinReader)
 		if err != nil {
-			_ = batchStdoutWriter.CloseWithError(ConcatenateError(err, (&stderr).String()))
-			_ = batchStdinReader.CloseWithError(ConcatenateError(err, (&stderr).String()))
-		} else {
-			_ = batchStdoutWriter.Close()
-			_ = batchStdinReader.Close()
+			log("Error in cat-file: %v", ConcatenateError(err, (&stderr).String()))
 		}
+		// _ = batchStdoutWriter.CloseWithError(ConcatenateError(err, (&stderr).String()))
+		// _ = batchStdinReader.CloseWithError(ConcatenateError(err, (&stderr).String()))
+		// } else {
+		_ = batchStdoutWriter.Close()
+		_ = batchStdinReader.Close()
+		// }
 	}()
 
 	// For simplicities sake we'll us a buffered reader to read from the cat-file --batch

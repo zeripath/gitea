@@ -11,6 +11,7 @@ import (
 	"bufio"
 	"context"
 	"errors"
+	"io"
 	"path/filepath"
 )
 
@@ -24,7 +25,7 @@ type Repository struct {
 
 	batchCancel context.CancelFunc
 	batchReader *bufio.Reader
-	batchWriter WriteCloserError
+	batchWriter io.WriteCloser
 
 	checkCancel context.CancelFunc
 	checkReader *bufio.Reader
@@ -52,7 +53,7 @@ func OpenRepository(repoPath string) (*Repository, error) {
 }
 
 // CatFileBatch obtains a CatFileBatch for this repository
-func (repo *Repository) CatFileBatch() (WriteCloserError, *bufio.Reader, func()) {
+func (repo *Repository) CatFileBatch() (io.WriteCloser, *bufio.Reader, func()) {
 	if repo.batchCancel == nil || repo.batchReader.Buffered() > 0 {
 		log("Opening temporary cat file batch for: %s", repo.Path)
 		return CatFileBatch(repo.Path)
