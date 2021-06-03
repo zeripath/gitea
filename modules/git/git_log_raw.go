@@ -38,6 +38,8 @@ func GitLogRawRepo(repository, head, treepath string, paths ...string) (*bufio.R
 				}
 			}
 		}
+	} else if treepath != "" {
+		args = append(args, treepath)
 	}
 
 	go func() {
@@ -146,7 +148,7 @@ diffloop:
 		if err == io.EOF || g.next[0] != ':' {
 			return &ret, nil
 		}
-		// we literally only care about nsha here - which is bytes 46:86
+		// we literally only care about nsha here - which is bytes 56:96
 		copy(nshaHolder[:], g.next[56:96])
 		g.next, err = g.rd.ReadSlice('\x00')
 		copy(fnameBuf, g.next)
@@ -255,11 +257,6 @@ func WalkGitLog(repo *Repository, head *Commit, treepath string, paths ...string
 		path2idx[paths[i]] = i
 	}
 
-	// for _, entry := range entries {
-	// 	i := path2idx[entry.Name()]
-	// 	copy(ids[40*i:40*(i+1)], []byte(entry.ID.String()))
-	// }
-
 	g := NewGitLogRawRepoParser(repo.Path, head.ID.String(), treepath, paths...)
 	defer g.Close()
 
@@ -267,6 +264,9 @@ func WalkGitLog(repo *Repository, head *Commit, treepath string, paths ...string
 	seen := map[string]bool{}
 	results := map[string]string{}
 	remaining := len(paths)
+	if treepath != "" {
+		remaining++
+	}
 	nextRestart := (len(paths) * 2) / 3
 	if nextRestart > 70 {
 		nextRestart = 70
