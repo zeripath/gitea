@@ -11,8 +11,6 @@ import (
 	"path"
 	"strconv"
 	"strings"
-
-	"github.com/emirpasic/gods/trees/binaryheap"
 )
 
 // LogRawRepo opens git log --raw in the provided repo and returns a stdin pipe, a stdout reader and cancel function
@@ -234,14 +232,6 @@ func (g *LogRawRepoParser) Close() {
 
 // WalkGitLog walks the git log --raw for the head commit in the provided treepath and files
 func WalkGitLog(repo *Repository, head *Commit, treepath string, paths ...string) (map[string]string, error) {
-	// We do a tree traversal with nodes sorted by commit time
-	heap := binaryheap.NewWith(func(a, b interface{}) int {
-		if a.(*LogRawCommitData).Timestamp < b.(*LogRawCommitData).Timestamp {
-			return 1
-		}
-		return -1
-	})
-
 	tree, err := head.SubTree(treepath)
 	if err != nil {
 		return nil, err
@@ -270,8 +260,6 @@ func WalkGitLog(repo *Repository, head *Commit, treepath string, paths ...string
 	g := NewLogRawRepoParser(repo.Path, head.ID.String(), treepath, paths...)
 	defer g.Close()
 
-	coms := map[string]*LogRawCommitData{}
-	seen := map[string]bool{}
 	results := map[string]string{}
 	remaining := len(paths)
 	if treepath != "" {
@@ -281,20 +269,19 @@ func WalkGitLog(repo *Repository, head *Commit, treepath string, paths ...string
 	if nextRestart > 70 {
 		nextRestart = 70
 	}
+	parentRemaining := map[string]bool{}
 
-	com, err := g.Next(treepath, path2idx, ids)
-	if err != nil {
-		g.Close()
-		return nil, err
-	}
-	heap.Push(com)
 heaploop:
 	for {
-		currentInterface, ok := heap.Pop()
-		if !ok {
+		current, err := g.Next(treepath, path2idx, ids)
+		if err != nil {
+			g.Close()
+			return nil, err
+		}
+		if current == nil {
 			break heaploop
 		}
-		current := currentInterface.(*LogRawCommitData)
+		delete(parentRemaining, current.CommitID)
 		if current.Paths != nil {
 			for path, i := range path2idx {
 				if _, ok := results[path]; !ok && current.Paths[i] {
@@ -312,10 +299,7 @@ heaploop:
 
 		if remaining <= 0 {
 			break heaploop
-		} else if remaining < nextRestart {
-			heap.Clear()
-			coms = map[string]*LogRawCommitData{}
-			seen = map[string]bool{}
+		} else if remaining < nextRestart && len(parentRemaining) == 0 {
 			g.Close()
 			remainingPaths := make([]string, 0, len(paths))
 			for _, pth := range paths {
@@ -323,45 +307,12 @@ heaploop:
 					remainingPaths = append(remainingPaths, pth)
 				}
 			}
-			g = NewLogRawRepoParser(repo.Path, head.ID.String(), treepath, remainingPaths...)
-			com, err := g.Next(treepath, path2idx, ids)
-			if err != nil {
-				g.Close()
-				return nil, err
-			}
-			heap.Push(com)
+			g = NewLogRawRepoParser(repo.Path, current.CommitID, treepath, remainingPaths...)
 			nextRestart = (remaining * 2) / 3
 			continue heaploop
 		}
-
 		for _, parent := range current.ParentIDs {
-			if parent == "" {
-				continue
-			}
-			parentCom, ok := coms[parent]
-			if !ok {
-			getparentloop:
-				for {
-					parentCom, err = g.Next(treepath, path2idx, ids)
-					if err != nil {
-						g.Close()
-						return nil, err
-					}
-					if parentCom == nil {
-						// missing parent
-						log("Missing parent for %s %s %s", repo.Path, com.CommitID, parent)
-						continue getparentloop
-					}
-					coms[parentCom.CommitID] = parentCom
-					if parentCom.CommitID == parent {
-						break getparentloop
-					}
-				}
-			}
-			if !seen[parent] {
-				heap.Push(parentCom)
-				seen[parent] = true
-			}
+			parentRemaining[parent] = true
 		}
 	}
 	g.Close()
