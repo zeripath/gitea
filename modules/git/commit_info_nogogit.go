@@ -7,7 +7,6 @@
 package git
 
 import (
-	"bufio"
 	"fmt"
 	"io"
 	"path"
