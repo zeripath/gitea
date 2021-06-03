@@ -1,3 +1,7 @@
+// Copyright 2021 The Gitea Authors. All rights reserved.
+// Use of this source code is governed by a MIT-style
+// license that can be found in the LICENSE file.
+
 package git
 
 import (
@@ -11,8 +15,8 @@ import (
 	"github.com/emirpasic/gods/trees/binaryheap"
 )
 
-// GitLogRawRepo opens git log --raw in the provided repo and returns a stdin pipe, a stdout reader and cancel function
-func GitLogRawRepo(repository, head, treepath string, paths ...string) (*bufio.Reader, func()) {
+// LogRawRepo opens git log --raw in the provided repo and returns a stdin pipe, a stdout reader and cancel function
+func LogRawRepo(repository, head, treepath string, paths ...string) (*bufio.Reader, func()) {
 	// We often want to feed the commits in order into cat-file --batch, followed by their trees and sub trees as necessary.
 	// so let's create a batch stdin and stdout
 	stdoutReader, stdoutWriter := io.Pipe()
@@ -58,7 +62,8 @@ func GitLogRawRepo(repository, head, treepath string, paths ...string) (*bufio.R
 	return bufReader, cancel
 }
 
-type GitLogRawRepoParser struct {
+// LogRawRepoParser parses a git log raw output from LogRawRepo
+type LogRawRepoParser struct {
 	treepath string
 	paths    []string
 	next     []byte
@@ -67,9 +72,10 @@ type GitLogRawRepoParser struct {
 	cancel   func()
 }
 
-func NewGitLogRawRepoParser(repository, head, treepath string, paths ...string) *GitLogRawRepoParser {
-	rd, cancel := GitLogRawRepo(repository, head, treepath, paths...)
-	return &GitLogRawRepoParser{
+// NewLogRawRepoParser returns a new parser for a git log raw output
+func NewLogRawRepoParser(repository, head, treepath string, paths ...string) *LogRawRepoParser {
+	rd, cancel := LogRawRepo(repository, head, treepath, paths...)
+	return &LogRawRepoParser{
 		treepath: treepath,
 		paths:    paths,
 		rd:       rd,
@@ -77,14 +83,16 @@ func NewGitLogRawRepoParser(repository, head, treepath string, paths ...string) 
 	}
 }
 
-type GitLogCommit struct {
+// LogRawCommitData represents a commit artefact from git log raw
+type LogRawCommitData struct {
 	CommitID  string
 	Timestamp int64
 	ParentIDs []string
 	Paths     []bool
 }
 
-func (g *GitLogRawRepoParser) Next(treepath string, paths2ids map[string]int, ids []byte) (*GitLogCommit, error) {
+// Next returns the next LogRawCommitData
+func (g *LogRawRepoParser) Next(treepath string, paths2ids map[string]int, ids []byte) (*LogRawCommitData, error) {
 	var err error
 	if g.next == nil || len(g.next) == 0 {
 		g.buffull = false
@@ -100,7 +108,7 @@ func (g *GitLogRawRepoParser) Next(treepath string, paths2ids map[string]int, id
 		}
 	}
 
-	ret := GitLogCommit{}
+	ret := LogRawCommitData{}
 	// Assume we're at a start
 	// Our "line" must look like: <commitid> SP <timestamp> SP (<parent> SP) * NUL
 	ret.CommitID = string(g.next[0:40])
@@ -219,14 +227,16 @@ diffloop:
 	}
 }
 
-func (g *GitLogRawRepoParser) Close() {
+// Close closes the parser
+func (g *LogRawRepoParser) Close() {
 	g.cancel()
 }
 
+// WalkGitLog walks the git log --raw for the head commit in the provided treepath and files
 func WalkGitLog(repo *Repository, head *Commit, treepath string, paths ...string) (map[string]string, error) {
 	// We do a tree traversal with nodes sorted by commit time
 	heap := binaryheap.NewWith(func(a, b interface{}) int {
-		if a.(*GitLogCommit).Timestamp < b.(*GitLogCommit).Timestamp {
+		if a.(*LogRawCommitData).Timestamp < b.(*LogRawCommitData).Timestamp {
 			return 1
 		}
 		return -1
@@ -257,10 +267,10 @@ func WalkGitLog(repo *Repository, head *Commit, treepath string, paths ...string
 		path2idx[paths[i]] = i
 	}
 
-	g := NewGitLogRawRepoParser(repo.Path, head.ID.String(), treepath, paths...)
+	g := NewLogRawRepoParser(repo.Path, head.ID.String(), treepath, paths...)
 	defer g.Close()
 
-	coms := map[string]*GitLogCommit{}
+	coms := map[string]*LogRawCommitData{}
 	seen := map[string]bool{}
 	results := map[string]string{}
 	remaining := len(paths)
@@ -284,7 +294,7 @@ heaploop:
 		if !ok {
 			break heaploop
 		}
-		current := currentInterface.(*GitLogCommit)
+		current := currentInterface.(*LogRawCommitData)
 		if current.Paths != nil {
 			for path, i := range path2idx {
 				if _, ok := results[path]; !ok && current.Paths[i] {
@@ -304,7 +314,7 @@ heaploop:
 			break heaploop
 		} else if remaining < nextRestart {
 			heap.Clear()
-			coms = map[string]*GitLogCommit{}
+			coms = map[string]*LogRawCommitData{}
 			seen = map[string]bool{}
 			g.Close()
 			remainingPaths := make([]string, 0, len(paths))
@@ -313,7 +323,7 @@ heaploop:
 					remainingPaths = append(remainingPaths, pth)
 				}
 			}
-			g = NewGitLogRawRepoParser(repo.Path, head.ID.String(), treepath, remainingPaths...)
+			g = NewLogRawRepoParser(repo.Path, head.ID.String(), treepath, remainingPaths...)
 			com, err := g.Next(treepath, path2idx, ids)
 			if err != nil {
 				g.Close()

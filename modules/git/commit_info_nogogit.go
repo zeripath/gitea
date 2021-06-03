@@ -7,15 +7,10 @@
 package git
 
 import (
-	"bufio"
 	"fmt"
 	"io"
 	"path"
 	"sort"
-	"strings"
-
-	"github.com/djherbis/buffer"
-	"github.com/djherbis/nio/v3"
 )
 
 // GetCommitsInfo gets information of all commits that are corresponding to these entries
@@ -119,39 +114,6 @@ func getLastCommitForPathsByCache(commitID, treePath string, paths []string, cac
 	}
 
 	return results, unHitEntryPaths, nil
-}
-
-func revlister(buf buffer.Buffer, commitID, repoPath string, paths ...string) (*bufio.Scanner, func()) {
-	// We'll do this by using rev-list to provide us with parent commits in order
-	buf.Reset()
-	revListReader, revListWriter := nio.Pipe(buf)
-
-	go func() {
-		stderr := strings.Builder{}
-		argLen := 3
-		if len(paths) > 0 {
-			argLen += 1 + len(paths)
-		}
-		args := make([]string, argLen)
-		copy(args, []string{"rev-list", "--format=%T%P", commitID})
-		if len(paths) > 0 {
-			args[3] = "--"
-			copy(args[4:], paths)
-		}
-
-		err := NewCommand(args...).RunInDirPipeline(repoPath, revListWriter, &stderr)
-		if err != nil {
-			_ = revListWriter.CloseWithError(ConcatenateError(err, (&stderr).String()))
-		} else {
-			_ = revListWriter.Close()
-		}
-	}()
-	scan := bufio.NewScanner(revListReader)
-
-	return scan, func() {
-		_ = revListWriter.Close()
-		_ = revListReader.Close()
-	}
 }
 
 // GetLastCommitForPaths returns last commit information
