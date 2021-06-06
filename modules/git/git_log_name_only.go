@@ -27,7 +27,7 @@ func LogNameOnlyRepo(repository, head, treepath string, paths ...string) (*bufio
 	}
 
 	args := make([]string, 0, 8+len(paths))
-	args = append(args, "log", "--name-status", "-c", "--format=commit%x00%H %P", "--parents", "--no-renames", "-t", "-z", head, "--")
+	args = append(args, "log", "--name-status", "-c", "--format=commit%x00%H %P%x00", "--parents", "--no-renames", "-t", "-z", head, "--")
 	if len(paths) < 70 {
 		if treepath != "" {
 			args = append(args, treepath)
@@ -164,6 +164,17 @@ func (g *LogNameOnlyRepoParser) Next(treepath string, paths2ids map[string]int, 
 				g.buffull = true
 			} else if err != io.EOF {
 				return nil, err
+			}
+		}
+		if g.next[0] == '\x00' {
+			g.buffull = false
+			g.next, err = g.rd.ReadSlice('\x00')
+			if err != nil {
+				if err == bufio.ErrBufferFull {
+					g.buffull = true
+				} else if err != io.EOF {
+					return nil, err
+				}
 			}
 		}
 	}
