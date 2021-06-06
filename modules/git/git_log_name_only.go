@@ -9,23 +9,27 @@ import (
 	"bytes"
 	"io"
 	"path"
-	"strconv"
+	"sort"
 	"strings"
+
+	"github.com/djherbis/buffer"
+	"github.com/djherbis/nio/v3"
 )
 
-// LogRawRepo opens git log --raw in the provided repo and returns a stdin pipe, a stdout reader and cancel function
-func LogRawRepo(repository, head, treepath string, paths ...string) (*bufio.Reader, func()) {
+// LogNameOnlyRepo opens git log --raw in the provided repo and returns a stdin pipe, a stdout reader and cancel function
+func LogNameOnlyRepo(repository, head, treepath string, paths ...string) (*bufio.Reader, func()) {
 	// We often want to feed the commits in order into cat-file --batch, followed by their trees and sub trees as necessary.
 	// so let's create a batch stdin and stdout
-	stdoutReader, stdoutWriter := io.Pipe()
+	stdoutReader, stdoutWriter := nio.Pipe(buffer.New(32 * 1024))
 	cancel := func() {
 		_ = stdoutReader.Close()
 		_ = stdoutWriter.Close()
 	}
 
 	args := make([]string, 0, 8+len(paths))
-	args = append(args, "log", "--raw", "--format=%H %ct %P", "--parents", "--no-abbrev", "--no-renames", "-t", "-z", head, "--")
+	args = append(args, "log", "--name-only", "--format=%x00%H %P", "--parents", "--no-renames", "-t", "-z", head, "--")
 	if len(paths) < 70 {
+		log("provided paths are: len(paths) = %d", len(paths))
 		if treepath != "" {
 			args = append(args, treepath)
 			for _, pth := range paths {
@@ -41,8 +45,11 @@ func LogRawRepo(repository, head, treepath string, paths ...string) (*bufio.Read
 			}
 		}
 	} else if treepath != "" {
+		log("provided paths are too long: len(paths) = %d", len(paths))
 		args = append(args, treepath)
 	}
+
+	log("args %s", args)
 
 	go func() {
 		stderr := strings.Builder{}
@@ -60,8 +67,8 @@ func LogRawRepo(repository, head, treepath string, paths ...string) (*bufio.Read
 	return bufReader, cancel
 }
 
-// LogRawRepoParser parses a git log raw output from LogRawRepo
-type LogRawRepoParser struct {
+// LogNameOnlyRepoParser parses a git log raw output from LogRawRepo
+type LogNameOnlyRepoParser struct {
 	treepath string
 	paths    []string
 	next     []byte
@@ -71,9 +78,9 @@ type LogRawRepoParser struct {
 }
 
 // NewLogRawRepoParser returns a new parser for a git log raw output
-func NewLogRawRepoParser(repository, head, treepath string, paths ...string) *LogRawRepoParser {
-	rd, cancel := LogRawRepo(repository, head, treepath, paths...)
-	return &LogRawRepoParser{
+func NewLogRawRepoParser(repository, head, treepath string, paths ...string) *LogNameOnlyRepoParser {
+	rd, cancel := LogNameOnlyRepo(repository, head, treepath, paths...)
+	return &LogNameOnlyRepoParser{
 		treepath: treepath,
 		paths:    paths,
 		rd:       rd,
@@ -81,16 +88,15 @@ func NewLogRawRepoParser(repository, head, treepath string, paths ...string) *Lo
 	}
 }
 
-// LogRawCommitData represents a commit artefact from git log raw
-type LogRawCommitData struct {
+// LogNameOnlyCommitData represents a commit artefact from git log raw
+type LogNameOnlyCommitData struct {
 	CommitID  string
-	Timestamp int64
 	ParentIDs []string
 	Paths     []bool
 }
 
 // Next returns the next LogRawCommitData
-func (g *LogRawRepoParser) Next(treepath string, paths2ids map[string]int, ids []byte) (*LogRawCommitData, error) {
+func (g *LogNameOnlyRepoParser) Next(treepath string, paths2ids map[string]int, changed []bool, maxpathlen int) (*LogNameOnlyCommitData, error) {
 	var err error
 	if g.next == nil || len(g.next) == 0 {
 		g.buffull = false
@@ -106,14 +112,23 @@ func (g *LogRawRepoParser) Next(treepath string, paths2ids map[string]int, ids [
 		}
 	}
 
-	ret := LogRawCommitData{}
-	// Assume we're at a start
-	// Our "line" must look like: <commitid> SP <timestamp> SP (<parent> SP) * NUL
+	ret := LogNameOnlyCommitData{}
+	if len(g.next) == 1 {
+		g.next, err = g.rd.ReadSlice('\x00')
+		if err != nil {
+			if err == bufio.ErrBufferFull {
+				g.buffull = true
+			} else if err == io.EOF {
+				return nil, nil
+			} else {
+				return nil, err
+			}
+		}
+	}
+
+	// Our "line" must look like: <commitid> SP (<parent> SP) * NUL
 	ret.CommitID = string(g.next[0:40])
-	idx := bytes.IndexByte(g.next[41:], ' ')
-	ret.Timestamp, _ = strconv.ParseInt(string(g.next[41:41+idx]), 10, 64)
-	g.next = g.next[41+idx+1:]
-	parents := string(g.next)
+	parents := string(g.next[41:])
 	if g.buffull {
 		more, err := g.rd.ReadString('\x00')
 		if err != nil {
@@ -140,23 +155,18 @@ func (g *LogRawRepoParser) Next(treepath string, paths2ids map[string]int, ids [
 	}
 
 	// Ok we have some changes.
-	// This line will look like: NL COLON <omode 6> SP <nmode 6> SP <osha 40> SP <nsha 40> SP <modifier 1> NUL
-	// followed by <fname> NUL
+	// This line will look like: NL <fname> NUL
 	//
 	// Subsequent lines will not have the NL - so drop it here - g.bufffull must also be false at this point too.
 	g.next = g.next[1:]
 
-	var nshaHolder [40]byte
 	fnameBuf := make([]byte, 4096)
 
 diffloop:
 	for {
-		if err == io.EOF || g.next[0] != ':' {
+		if err == io.EOF || g.next[0] == '\x00' {
 			return &ret, nil
 		}
-		// we literally only care about nsha here - which is bytes 56:96
-		copy(nshaHolder[:], g.next[56:96])
-		g.next, err = g.rd.ReadSlice('\x00')
 		copy(fnameBuf, g.next)
 		if len(fnameBuf) < len(g.next) {
 			fnameBuf = append(fnameBuf, g.next[len(fnameBuf):]...)
@@ -192,6 +202,10 @@ diffloop:
 			}
 		}
 		fnameBuf = fnameBuf[len(treepath) : len(fnameBuf)-1]
+		if len(fnameBuf) > maxpathlen {
+			fnameBuf = fnameBuf[:cap(fnameBuf)]
+			continue diffloop
+		}
 		if len(fnameBuf) > 0 {
 			if len(treepath) > 0 {
 				if fnameBuf[0] != '/' || bytes.IndexByte(fnameBuf[1:], '/') >= 0 {
@@ -210,23 +224,15 @@ diffloop:
 			fnameBuf = fnameBuf[:cap(fnameBuf)]
 			continue diffloop
 		}
-		if bytes.Equal(ids[40*idx:40*(idx+1)], []byte{'\x00', '\x00', '\x00', '\x00', '\x00', '\x00', '\x00', '\x00', '\x00', '\x00', '\x00', '\x00', '\x00', '\x00', '\x00', '\x00', '\x00', '\x00', '\x00', '\x00', '\x00', '\x00', '\x00', '\x00', '\x00', '\x00', '\x00', '\x00', '\x00', '\x00', '\x00', '\x00', '\x00', '\x00', '\x00', '\x00', '\x00', '\x00', '\x00', '\x00'}) {
-			copy(ids[40*idx:40*(idx+1)], nshaHolder[:])
-			if ret.Paths == nil {
-				ret.Paths = make([]bool, len(ids)/40)
-			}
-			ret.Paths[idx] = true
-		} else if bytes.Equal(nshaHolder[:], ids[40*idx:40*(idx+1)]) {
-			if ret.Paths == nil {
-				ret.Paths = make([]bool, len(ids)/40)
-			}
-			ret.Paths[idx] = true
+		if ret.Paths == nil {
+			ret.Paths = changed
 		}
+		changed[idx] = true
 	}
 }
 
 // Close closes the parser
-func (g *LogRawRepoParser) Close() {
+func (g *LogNameOnlyRepoParser) Close() {
 	g.cancel()
 }
 
@@ -248,32 +254,47 @@ func WalkGitLog(repo *Repository, head *Commit, treepath string, paths ...string
 		for _, entry := range entries {
 			paths = append(paths, entry.Name())
 		}
+	} else {
+		sort.Strings(paths)
+		if paths[0] != "" {
+			paths = append([]string{""}, paths...)
+		}
+		// remove duplicates
+		for i := len(paths) - 1; i > 0; i-- {
+			if paths[i] == paths[i-1] {
+				paths = append(paths[:i-1], paths[i:]...)
+			}
+		}
 	}
 
-	ids := make([]byte, 40*len(paths))
 	path2idx := map[string]int{}
+	maxpathlen := len(treepath)
 
 	for i := range paths {
 		path2idx[paths[i]] = i
+		pthlen := len(paths[i]) + len(treepath) + 1
+		if pthlen > maxpathlen {
+			maxpathlen = pthlen
+		}
 	}
 
 	g := NewLogRawRepoParser(repo.Path, head.ID.String(), treepath, paths...)
 	defer g.Close()
 
-	results := map[string]string{}
+	results := make([]string, len(paths))
 	remaining := len(paths)
-	if treepath != "" {
-		remaining++
-	}
 	nextRestart := (len(paths) * 2) / 3
 	if nextRestart > 70 {
 		nextRestart = 70
 	}
+	lastEmptyParent := head.ID.String()
 	parentRemaining := map[string]bool{}
+
+	changed := make([]bool, len(paths))
 
 heaploop:
 	for {
-		current, err := g.Next(treepath, path2idx, ids)
+		current, err := g.Next(treepath, path2idx, changed, maxpathlen)
 		if err != nil {
 			g.Close()
 			return nil, err
@@ -283,13 +304,17 @@ heaploop:
 		}
 		delete(parentRemaining, current.CommitID)
 		if current.Paths != nil {
-			for path, i := range path2idx {
-				if _, ok := results[path]; !ok && current.Paths[i] {
-					results[path] = current.CommitID
-					delete(path2idx, path)
+			for i, found := range current.Paths {
+				if !found {
+					continue
+				}
+				changed[i] = false
+				if results[i] == "" {
+					results[i] = current.CommitID
+					delete(path2idx, paths[i])
 					remaining--
-					if _, ok = results[""]; !ok {
-						results[""] = current.CommitID
+					if results[0] == "" {
+						results[0] = current.CommitID
 						delete(path2idx, "")
 						remaining--
 					}
@@ -299,15 +324,20 @@ heaploop:
 
 		if remaining <= 0 {
 			break heaploop
-		} else if remaining < nextRestart && len(parentRemaining) == 0 {
+		}
+
+		if len(parentRemaining) == 0 {
+			lastEmptyParent = current.CommitID
+		}
+		if remaining < nextRestart {
 			g.Close()
 			remainingPaths := make([]string, 0, len(paths))
-			for _, pth := range paths {
-				if _, ok := path2idx[pth]; ok {
+			for i, pth := range paths {
+				if results[i] == "" {
 					remainingPaths = append(remainingPaths, pth)
 				}
 			}
-			g = NewLogRawRepoParser(repo.Path, current.CommitID, treepath, remainingPaths...)
+			g = NewLogRawRepoParser(repo.Path, lastEmptyParent, treepath, remainingPaths...)
 			nextRestart = (remaining * 2) / 3
 			continue heaploop
 		}
@@ -316,5 +346,11 @@ heaploop:
 		}
 	}
 	g.Close()
-	return results, nil
+
+	resultsMap := map[string]string{}
+	for i, pth := range paths {
+		resultsMap[pth] = results[i]
+	}
+
+	return resultsMap, nil
 }
