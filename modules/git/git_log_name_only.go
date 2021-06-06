@@ -27,7 +27,7 @@ func LogNameOnlyRepo(repository, head, treepath string, paths ...string) (*bufio
 	}
 
 	args := make([]string, 0, 8+len(paths))
-	args = append(args, "log", "--name-status", "-c", "--format=%x00%H %P", "--parents", "--no-renames", "-t", "-z", head, "--")
+	args = append(args, "log", "--name-status", "-c", "--format=commit%x00%H %P", "--parents", "--no-renames", "-t", "-z", head, "--")
 	if len(paths) < 70 {
 		if treepath != "" {
 			args = append(args, treepath)
@@ -109,7 +109,7 @@ func (g *LogNameOnlyRepoParser) Next(treepath string, paths2ids map[string]int, 
 	}
 
 	ret := LogNameOnlyCommitData{}
-	if len(g.next) == 1 {
+	if bytes.Equal(g.next, []byte("commit\000")) {
 		g.next, err = g.rd.ReadSlice('\x00')
 		if err != nil {
 			if err == bufio.ErrBufferFull {
@@ -146,7 +146,7 @@ func (g *LogNameOnlyRepoParser) Next(treepath string, paths2ids map[string]int, 
 		}
 	}
 
-	if err == io.EOF || g.next[0] != '\n' {
+	if err == io.EOF || !(g.next[0] == '\n' || g.next[0] == '\000') {
 		return &ret, nil
 	}
 
@@ -154,13 +154,25 @@ func (g *LogNameOnlyRepoParser) Next(treepath string, paths2ids map[string]int, 
 	// This line will look like: NL <fname> NUL
 	//
 	// Subsequent lines will not have the NL - so drop it here - g.bufffull must also be false at this point too.
-	g.next = g.next[1:]
+	if g.next[0] == '\n' {
+		g.next = g.next[1:]
+	} else {
+		g.buffull = false
+		g.next, err = g.rd.ReadSlice('\x00')
+		if err != nil {
+			if err == bufio.ErrBufferFull {
+				g.buffull = true
+			} else if err != io.EOF {
+				return nil, err
+			}
+		}
+	}
 
 	fnameBuf := make([]byte, 4096)
 
 diffloop:
 	for {
-		if err == io.EOF || g.next[0] == '\x00' {
+		if err == io.EOF || bytes.Equal(g.next, []byte("commit\000")) {
 			return &ret, nil
 		}
 		g.next, err = g.rd.ReadSlice('\x00')
