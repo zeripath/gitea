@@ -367,6 +367,7 @@ heaploop:
 				}
 			}
 			g = NewLogRawRepoParser(repo.Path, lastEmptyParent, treepath, remainingPaths...)
+			parentRemaining = map[string]bool{}
 			nextRestart = (remaining * 2) / 3
 			continue heaploop
 		}
