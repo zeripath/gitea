@@ -27,7 +27,7 @@ func LogNameOnlyRepo(repository, head, treepath string, paths ...string) (*bufio
 	}
 
 	args := make([]string, 0, 8+len(paths))
-	args = append(args, "log", "--name-status", "--format=%x00%H %P", "--parents", "--no-renames", "-t", "-z", head, "--")
+	args = append(args, "log", "--name-status", "-c", "--format=%x00%H %P", "--parents", "--no-renames", "-t", "-z", head, "--")
 	if len(paths) < 70 {
 		if treepath != "" {
 			args = append(args, treepath)
