@@ -7,6 +7,7 @@
 package git
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"path"
@@ -14,7 +15,7 @@ import (
 )
 
 // GetCommitsInfo gets information of all commits that are corresponding to these entries
-func (tes Entries) GetCommitsInfo(commit *Commit, treePath string, cache *LastCommitCache) ([]CommitInfo, *Commit, error) {
+func (tes Entries) GetCommitsInfo(ctx context.Context, commit *Commit, treePath string, cache *LastCommitCache) ([]CommitInfo, *Commit, error) {
 	entryPaths := make([]string, len(tes)+1)
 	// Get the commit for the treePath itself
 	entryPaths[0] = ""
@@ -27,13 +28,13 @@ func (tes Entries) GetCommitsInfo(commit *Commit, treePath string, cache *LastCo
 	var revs map[string]*Commit
 	if cache != nil {
 		var unHitPaths []string
-		revs, unHitPaths, err = getLastCommitForPathsByCache(commit.ID.String(), treePath, entryPaths, cache)
+		revs, unHitPaths, err = getLastCommitForPathsByCache(ctx, commit.ID.String(), treePath, entryPaths, cache)
 		if err != nil {
 			return nil, nil, err
 		}
 		if len(unHitPaths) > 0 {
 			sort.Strings(unHitPaths)
-			commits, err := GetLastCommitForPaths(commit, treePath, unHitPaths)
+			commits, err := GetLastCommitForPaths(ctx, commit, treePath, unHitPaths)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -47,7 +48,7 @@ func (tes Entries) GetCommitsInfo(commit *Commit, treePath string, cache *LastCo
 		}
 	} else {
 		sort.Strings(entryPaths)
-		revs, err = GetLastCommitForPaths(commit, treePath, entryPaths)
+		revs, err = GetLastCommitForPaths(ctx, commit, treePath, entryPaths)
 	}
 	if err != nil {
 		return nil, nil, err
@@ -94,7 +95,7 @@ func (tes Entries) GetCommitsInfo(commit *Commit, treePath string, cache *LastCo
 	return commitsInfo, treeCommit, nil
 }
 
-func getLastCommitForPathsByCache(commitID, treePath string, paths []string, cache *LastCommitCache) (map[string]*Commit, []string, error) {
+func getLastCommitForPathsByCache(ctx context.Context, commitID, treePath string, paths []string, cache *LastCommitCache) (map[string]*Commit, []string, error) {
 	wr, rd, cancel := cache.repo.CatFileBatch()
 	defer cancel()
 
@@ -117,9 +118,9 @@ func getLastCommitForPathsByCache(commitID, treePath string, paths []string, cac
 }
 
 // GetLastCommitForPaths returns last commit information
-func GetLastCommitForPaths(commit *Commit, treePath string, paths []string) (map[string]*Commit, error) {
+func GetLastCommitForPaths(ctx context.Context, commit *Commit, treePath string, paths []string) (map[string]*Commit, error) {
 	// We read backwards from the commit to obtain all of the commits
-	revs, err := WalkGitLog(commit.repo, commit, treePath, paths...)
+	revs, err := WalkGitLog(ctx, commit.repo, commit, treePath, paths...)
 	if err != nil {
 		return nil, err
 	}

@@ -7,6 +7,7 @@ package git
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"io"
 	"path"
 	"sort"
@@ -266,7 +267,7 @@ func (g *LogNameStatusRepoParser) Close() {
 }
 
 // WalkGitLog walks the git log --name-status for the head commit in the provided treepath and files
-func WalkGitLog(repo *Repository, head *Commit, treepath string, paths ...string) (map[string]string, error) {
+func WalkGitLog(ctx context.Context, repo *Repository, head *Commit, treepath string, paths ...string) (map[string]string, error) {
 	tree, err := head.SubTree(treepath)
 	if err != nil {
 		return nil, err
@@ -325,6 +326,11 @@ func WalkGitLog(repo *Repository, head *Commit, treepath string, paths ...string
 
 heaploop:
 	for {
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		default:
+		}
 		current, err := g.Next(treepath, path2idx, changed, maxpathlen)
 		if err != nil {
 			g.Close()
