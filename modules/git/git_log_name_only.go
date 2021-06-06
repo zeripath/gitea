@@ -29,7 +29,6 @@ func LogNameOnlyRepo(repository, head, treepath string, paths ...string) (*bufio
 	args := make([]string, 0, 8+len(paths))
 	args = append(args, "log", "--name-only", "--format=%x00%H %P", "--parents", "--no-renames", "-t", "-z", head, "--")
 	if len(paths) < 70 {
-		log("provided paths are: len(paths) = %d", len(paths))
 		if treepath != "" {
 			args = append(args, treepath)
 			for _, pth := range paths {
@@ -45,11 +44,8 @@ func LogNameOnlyRepo(repository, head, treepath string, paths ...string) (*bufio
 			}
 		}
 	} else if treepath != "" {
-		log("provided paths are too long: len(paths) = %d", len(paths))
 		args = append(args, treepath)
 	}
-
-	log("args %s", args)
 
 	go func() {
 		stderr := strings.Builder{}
