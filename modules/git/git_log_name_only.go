@@ -316,6 +316,9 @@ func WalkGitLog(repo *Repository, head *Commit, treepath string, paths ...string
 	if nextRestart > 70 {
 		nextRestart = 70
 	}
+	lastEmptyParent := head.ID.String()
+	commitSinceLastEmptyParent := uint64(0)
+	commitSinceNextRestart := uint64(0)
 	parentRemaining := map[string]bool{}
 
 	changed := make([]bool, len(paths))
@@ -353,18 +356,26 @@ heaploop:
 		if remaining <= 0 {
 			break heaploop
 		}
-		if remaining < nextRestart && len(parentRemaining) == 0 {
-			g.Close()
-			remainingPaths := make([]string, 0, len(paths))
-			for i, pth := range paths {
-				if results[i] == "" {
-					remainingPaths = append(remainingPaths, pth)
+		commitSinceLastEmptyParent++
+		if len(parentRemaining) == 0 {
+			lastEmptyParent = current.CommitID
+			commitSinceLastEmptyParent = 0
+		}
+		if remaining <= nextRestart {
+			commitSinceNextRestart++
+			if 4*commitSinceNextRestart > 3*commitSinceLastEmptyParent {
+				g.Close()
+				remainingPaths := make([]string, 0, len(paths))
+				for i, pth := range paths {
+					if results[i] == "" {
+						remainingPaths = append(remainingPaths, pth)
+					}
 				}
+				g = NewLogRawRepoParser(repo.Path, lastEmptyParent, treepath, remainingPaths...)
+				parentRemaining = map[string]bool{}
+				nextRestart = (remaining * 3) / 4
+				continue heaploop
 			}
-			g = NewLogRawRepoParser(repo.Path, current.CommitID, treepath, remainingPaths...)
-			parentRemaining = map[string]bool{}
-			nextRestart = (remaining * 3) / 4
-			continue heaploop
 		}
 		for _, parent := range current.ParentIDs {
 			parentRemaining[parent] = true
