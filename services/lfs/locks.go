@@ -20,21 +20,6 @@ import (
 	"github.com/goccy/go-json"
 )
 
-//checkIsValidRequest check if it a valid request in case of bad request it write the response to ctx.
-func checkIsValidRequest(ctx *context.Context) bool {
-	if !setting.LFS.StartServer {
-		log.Debug("Attempt to access LFS server but LFS server is disabled")
-		writeStatus(ctx, http.StatusNotFound)
-		return false
-	}
-	if !MetaMatcher(ctx.Req) {
-		log.Info("Attempt access LOCKs without accepting the correct media type: %s", lfs_module.MediaType)
-		writeStatus(ctx, http.StatusBadRequest)
-		return false
-	}
-	return true
-}
-
 func handleLockListOut(ctx *context.Context, repo *models.Repository, lock *models.LFSLock, err error) {
 	if err != nil {
 		if models.IsErrLFSLockNotExist(err) {
@@ -61,12 +46,7 @@ func handleLockListOut(ctx *context.Context, repo *models.Repository, lock *mode
 
 // GetListLockHandler list locks
 func GetListLockHandler(ctx *context.Context) {
-	if !checkIsValidRequest(ctx) {
-		// Status is written in checkIsValidRequest
-		return
-	}
-
-	rv, _ := unpack(ctx)
+	rv := getRequestContext(ctx)
 
 	repository, err := models.GetRepositoryByOwnerAndName(rv.User, rv.Repo)
 	if err != nil {
@@ -151,11 +131,6 @@ func GetListLockHandler(ctx *context.Context) {
 
 // PostLockHandler create lock
 func PostLockHandler(ctx *context.Context) {
-	if !checkIsValidRequest(ctx) {
-		// Status is written in checkIsValidRequest
-		return
-	}
-
 	userName := ctx.Params("username")
 	repoName := strings.TrimSuffix(ctx.Params("reponame"), ".git")
 	authorization := ctx.Req.Header.Get("Authorization")
@@ -223,11 +198,6 @@ func PostLockHandler(ctx *context.Context) {
 
 // VerifyLockHandler list locks for verification
 func VerifyLockHandler(ctx *context.Context) {
-	if !checkIsValidRequest(ctx) {
-		// Status is written in checkIsValidRequest
-		return
-	}
-
 	userName := ctx.Params("username")
 	repoName := strings.TrimSuffix(ctx.Params("reponame"), ".git")
 	authorization := ctx.Req.Header.Get("Authorization")
@@ -294,11 +264,6 @@ func VerifyLockHandler(ctx *context.Context) {
 
 // UnLockHandler delete locks
 func UnLockHandler(ctx *context.Context) {
-	if !checkIsValidRequest(ctx) {
-		// Status is written in checkIsValidRequest
-		return
-	}
-
 	userName := ctx.Params("username")
 	repoName := strings.TrimSuffix(ctx.Params("reponame"), ".git")
 	authorization := ctx.Req.Header.Get("Authorization")
