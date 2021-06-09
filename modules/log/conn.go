@@ -6,6 +6,7 @@
 package log
 
 import (
+	"fmt"
 	"io"
 	"net"
 
@@ -107,7 +108,7 @@ func NewConn() LoggerProvider {
 func (log *ConnLogger) Init(jsonconfig string) error {
 	err := json.Unmarshal([]byte(jsonconfig), log)
 	if err != nil {
-		return err
+		return fmt.Errorf("JSON Unmarshal: %v", err)
 	}
 	log.NewWriterLogger(&connWriter{
 		ReconnectOnMsg: log.ReconnectOnMsg,

@@ -6,6 +6,7 @@
 package log
 
 import (
+	"fmt"
 	"io"
 	"os"
 
@@ -53,7 +54,7 @@ func NewConsoleLogger() LoggerProvider {
 func (log *ConsoleLogger) Init(config string) error {
 	err := json.Unmarshal([]byte(config), log)
 	if err != nil {
-		return err
+		return fmt.Errorf("JSON Unmarshal: %v", err)
 	}
 	if log.Stderr {
 		log.NewWriterLogger(&nopWriteCloser{

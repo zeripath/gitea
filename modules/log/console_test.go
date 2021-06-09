@@ -17,7 +17,7 @@ func TestConsoleLoggerBadConfig(t *testing.T) {
 	logger := NewConsoleLogger()
 
 	err := logger.Init("{")
-	assert.Equal(t, "unexpected end of JSON input", err.Error())
+	assert.Contains(t, err.Error(), "JSON Unmarshal")
 	logger.Close()
 }
 
