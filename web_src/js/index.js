@@ -2733,6 +2733,10 @@ $(document).ready(async () => {
     }
   });
 
+  if ($('.reload.loader').length > 0) {
+    setTimeout(reload, 2000);
+  }
+
   buttonsClickOnEnter();
   searchUsers();
   searchTeams();
