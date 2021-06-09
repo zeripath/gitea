@@ -16,8 +16,8 @@ import (
 	"github.com/djherbis/nio/v3"
 )
 
-// LogNameOnlyRepo opens git log --raw in the provided repo and returns a stdin pipe, a stdout reader and cancel function
-func LogNameOnlyRepo(repository, head, treepath string, paths ...string) (*bufio.Reader, func()) {
+// LogNameStatusRepo opens git log --raw in the provided repo and returns a stdin pipe, a stdout reader and cancel function
+func LogNameStatusRepo(repository, head, treepath string, paths ...string) (*bufio.Reader, func()) {
 	// We often want to feed the commits in order into cat-file --batch, followed by their trees and sub trees as necessary.
 	// so let's create a batch stdin and stdout
 	stdoutReader, stdoutWriter := nio.Pipe(buffer.New(32 * 1024))
@@ -63,8 +63,8 @@ func LogNameOnlyRepo(repository, head, treepath string, paths ...string) (*bufio
 	return bufReader, cancel
 }
 
-// LogNameOnlyRepoParser parses a git log raw output from LogRawRepo
-type LogNameOnlyRepoParser struct {
+// LogNameStatusRepoParser parses a git log raw output from LogRawRepo
+type LogNameStatusRepoParser struct {
 	treepath string
 	paths    []string
 	next     []byte
@@ -73,10 +73,10 @@ type LogNameOnlyRepoParser struct {
 	cancel   func()
 }
 
-// NewLogRawRepoParser returns a new parser for a git log raw output
-func NewLogRawRepoParser(repository, head, treepath string, paths ...string) *LogNameOnlyRepoParser {
-	rd, cancel := LogNameOnlyRepo(repository, head, treepath, paths...)
-	return &LogNameOnlyRepoParser{
+// NewLogNameStatusRepoParser returns a new parser for a git log raw output
+func NewLogNameStatusRepoParser(repository, head, treepath string, paths ...string) *LogNameStatusRepoParser {
+	rd, cancel := LogNameStatusRepo(repository, head, treepath, paths...)
+	return &LogNameStatusRepoParser{
 		treepath: treepath,
 		paths:    paths,
 		rd:       rd,
@@ -84,15 +84,15 @@ func NewLogRawRepoParser(repository, head, treepath string, paths ...string) *Lo
 	}
 }
 
-// LogNameOnlyCommitData represents a commit artefact from git log raw
-type LogNameOnlyCommitData struct {
+// LogNameStatusCommitData represents a commit artefact from git log raw
+type LogNameStatusCommitData struct {
 	CommitID  string
 	ParentIDs []string
 	Paths     []bool
 }
 
-// Next returns the next LogRawCommitData
-func (g *LogNameOnlyRepoParser) Next(treepath string, paths2ids map[string]int, changed []bool, maxpathlen int) (*LogNameOnlyCommitData, error) {
+// Next returns the next LogStatusCommitData
+func (g *LogNameStatusRepoParser) Next(treepath string, paths2ids map[string]int, changed []bool, maxpathlen int) (*LogNameStatusCommitData, error) {
 	var err error
 	if g.next == nil || len(g.next) == 0 {
 		g.buffull = false
@@ -108,7 +108,7 @@ func (g *LogNameOnlyRepoParser) Next(treepath string, paths2ids map[string]int, 
 		}
 	}
 
-	ret := LogNameOnlyCommitData{}
+	ret := LogNameStatusCommitData{}
 	if bytes.Equal(g.next, []byte("commit\000")) {
 		g.next, err = g.rd.ReadSlice('\x00')
 		if err != nil {
@@ -261,11 +261,11 @@ diffloop:
 }
 
 // Close closes the parser
-func (g *LogNameOnlyRepoParser) Close() {
+func (g *LogNameStatusRepoParser) Close() {
 	g.cancel()
 }
 
-// WalkGitLog walks the git log --raw for the head commit in the provided treepath and files
+// WalkGitLog walks the git log --name-status for the head commit in the provided treepath and files
 func WalkGitLog(repo *Repository, head *Commit, treepath string, paths ...string) (map[string]string, error) {
 	tree, err := head.SubTree(treepath)
 	if err != nil {
@@ -307,7 +307,7 @@ func WalkGitLog(repo *Repository, head *Commit, treepath string, paths ...string
 		}
 	}
 
-	g := NewLogRawRepoParser(repo.Path, head.ID.String(), treepath, paths...)
+	g := NewLogNameStatusRepoParser(repo.Path, head.ID.String(), treepath, paths...)
 	defer g.Close()
 
 	results := make([]string, len(paths))
@@ -371,7 +371,7 @@ heaploop:
 						remainingPaths = append(remainingPaths, pth)
 					}
 				}
-				g = NewLogRawRepoParser(repo.Path, lastEmptyParent, treepath, remainingPaths...)
+				g = NewLogNameStatusRepoParser(repo.Path, lastEmptyParent, treepath, remainingPaths...)
 				parentRemaining = map[string]bool{}
 				nextRestart = (remaining * 3) / 4
 				continue heaploop
